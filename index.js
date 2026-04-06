@@ -1,41 +1,24 @@
 const express = require("express");
 const axios = require("axios");
 const fs = require("fs");
+const { exec } = require("child_process");
 require("dotenv").config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-// ===== TOKENS =====
 const BOT_TOKEN = process.env.BOT_TOKEN;
 
-// ===== HOME =====
-app.get("/", (req, res) => {
-    res.send("🚀 API + Bot Running");
-});
-
-// ===== SIMPLE EXTRACT API =====
-app.get("/extract", async (req, res) => {
-    const url = req.query.url;
-
-    if (!url) {
-        return res.json({ status: false, message: "URL missing" });
-    }
-
-    res.json({
-        status: true,
-        title: "Video",
-        video: url
-    });
-});
-
-// ===== TELEGRAM BOT =====
 const TelegramBot = require("node-telegram-bot-api");
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 
-// START COMMAND
+// HOME
+app.get("/", (req, res) => {
+    res.send("🚀 Advanced Bot Running");
+});
+
+// START
 bot.onText(/\/start/, (msg) => {
-    bot.sendMessage(msg.chat.id, "📥 Send video link");
+    bot.sendMessage(msg.chat.id, "📥 Send any link (MP4 / M3U8 / Instagram / YouTube)");
 });
 
 // MESSAGE HANDLER
@@ -45,42 +28,57 @@ bot.on("message", async (msg) => {
 
     if (!text || !text.startsWith("http")) return;
 
+    const filePath = `video_${Date.now()}.mp4`;
+
     try {
         await bot.sendMessage(chatId, "🔍 Processing...");
 
-        // ✅ Render API use ho rahi hai
-        const apiUrl = `https://api-project-sx7e.onrender.com/extract?url=${text}`;
-        const response = await axios.get(apiUrl);
+        // ===== M3U8 =====
+        if (text.includes(".m3u8")) {
+            await bot.sendMessage(chatId, "🎥 Converting M3U8...");
 
-        if (!response.data.video) {
-            return bot.sendMessage(chatId, "❌ No video found");
+            exec(`ffmpeg -y -i "${text}" -preset ultrafast -c copy "${filePath}"`, async (err) => {
+                if (err) return bot.sendMessage(chatId, "❌ M3U8 failed");
+
+                await bot.sendVideo(chatId, filePath);
+                fs.unlinkSync(filePath);
+            });
         }
 
-        const videoUrl = response.data.video;
-        const filePath = `video_${Date.now()}.mp4`;
+        // ===== INSTAGRAM / YOUTUBE =====
+        else if (
+            text.includes("instagram.com") ||
+            text.includes("youtube.com") ||
+            text.includes("youtu.be")
+        ) {
+            await bot.sendMessage(chatId, "📥 Downloading...");
 
-        await bot.sendMessage(chatId, "⬇️ Downloading...");
+            exec(`yt-dlp -f "best[height<=720]" -o "${filePath}" "${text}"`, async (err) => {
+                if (err) return bot.sendMessage(chatId, "❌ Download failed");
 
-        // DOWNLOAD
-        const videoResponse = await axios({
-            url: videoUrl,
-            method: "GET",
-            responseType: "stream"
-        });
-
-        const writer = fs.createWriteStream(filePath);
-        videoResponse.data.pipe(writer);
-
-        writer.on("finish", async () => {
-            try {
-                await bot.sendMessage(chatId, "📤 Uploading...");
                 await bot.sendVideo(chatId, filePath);
-
                 fs.unlinkSync(filePath);
-            } catch (err) {
-                bot.sendMessage(chatId, "❌ Upload failed");
-            }
-        });
+            });
+        }
+
+        // ===== DIRECT MP4 =====
+        else {
+            await bot.sendMessage(chatId, "⬇️ Downloading MP4...");
+
+            const response = await axios({
+                url: text,
+                method: "GET",
+                responseType: "stream"
+            });
+
+            const writer = fs.createWriteStream(filePath);
+            response.data.pipe(writer);
+
+            writer.on("finish", async () => {
+                await bot.sendVideo(chatId, filePath);
+                fs.unlinkSync(filePath);
+            });
+        }
 
     } catch (err) {
         console.log(err);
@@ -88,7 +86,7 @@ bot.on("message", async (msg) => {
     }
 });
 
-// ===== START SERVER =====
+// START SERVER
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
