@@ -48,8 +48,8 @@ bot.on("message", async (msg) => {
     try {
         await bot.sendMessage(chatId, "🔍 Processing...");
 
-        // STEP 1: CALL OWN API
-        const apiUrl = `http://localhost:${PORT}/extract?url=${text}`;
+        // ✅ Render API use ho rahi hai
+        const apiUrl = `https://api-project-sx7e.onrender.com/extract?url=${text}`;
         const response = await axios.get(apiUrl);
 
         if (!response.data.video) {
@@ -61,7 +61,7 @@ bot.on("message", async (msg) => {
 
         await bot.sendMessage(chatId, "⬇️ Downloading...");
 
-        // STEP 2: DOWNLOAD
+        // DOWNLOAD
         const videoResponse = await axios({
             url: videoUrl,
             method: "GET",
